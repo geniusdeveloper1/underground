@@ -1,0 +1,80 @@
+const POSTS_KEY='underground-posts-v2', THEME_KEY='underground-theme-v2', USER_KEY='underground-user-v2', SAVED_KEY='underground-saved-v2', DONE_KEY='underground-challenge-v2';
+const view=document.getElementById('view'), discussionList=document.getElementById('discussion-list'), countEl=document.getElementById('discussion-count'), breadcrumb=document.getElementById('breadcrumb');
+let posts=read(POSTS_KEY,[]), saved=read(SAVED_KEY,[]), user=read(USER_KEY,{name:'Member'}), activeId=null;
+function read(k,fallback){try{return JSON.parse(localStorage.getItem(k))??fallback}catch{return fallback}}
+function write(k,v){localStorage.setItem(k,JSON.stringify(v))}
+function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function initials(s){return (s.trim()[0]||'U').toUpperCase()}
+function dateLabel(v){return new Date(v).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}
+function getPage(){let [page,id]=location.hash.replace(/^#/,'').split('/');return {page:page||'feed',id:id||null}}
+function theme(){return localStorage.getItem(THEME_KEY)||'dark'}
+function applyTheme(t){document.body.dataset.theme=t;localStorage.setItem(THEME_KEY,t);document.querySelector('meta[name="theme-color"]').content=t==='dark'?'#171a20':'#f4f5f7'}
+applyTheme(theme());
+function savePosts(){write(POSTS_KEY,posts);renderSidebar()}
+function renderSidebar(){
+ const own=posts.filter(p=>p.author===user.name).sort((a,b)=>b.createdAt-a.createdAt);
+ countEl.textContent=own.length;
+ discussionList.innerHTML=own.length?own.map(p=>`<button class="discussion-item" data-open="${esc(p.id)}">${esc(p.title)}</button>`).join(''):'<div class="side-empty">Your posts will show up here.</div>';
+ discussionList.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>location.hash='post/'+b.dataset.open);
+ document.getElementById('sidebar-name').textContent=user.name;
+ document.getElementById('user-avatar').textContent=initials(user.name);
+}
+function setNav(page){document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===page))}
+function safeVideo(v){try{const u=new URL(v);return ['youtube.com','www.youtube.com','youtu.be','m.youtube.com'].includes(u.hostname)?u.href:''}catch{return ''}}
+function postCard(p){return `<article class="post-card"><div class="post-meta"><span class="avatar-small">${esc(initials(p.author))}</span><span class="post-author">${esc(p.author)}</span><span>·</span><span>${dateLabel(p.createdAt)}</span><span class="tag">${esc(p.category)}</span></div><h2 class="card-title" data-open-post="${esc(p.id)}">${esc(p.title)}</h2><p class="post-excerpt">${esc(p.body.length>230?p.body.slice(0,230)+'…':p.body)}</p>${p.video?`<a class="video-link" href="${esc(p.video)}" target="_blank" rel="noopener noreferrer">▶ Watch shared video ↗</a>`:''}<div class="post-card-footer"><button data-like="${esc(p.id)}" class="quiet-btn">♡ ${p.likes||0}</button><button data-save="${esc(p.id)}" class="quiet-btn">${saved.includes(p.id)?'◆ Saved':'◇ Save'}</button><button data-open-post="${esc(p.id)}" class="quiet-btn"> ${p.comments.length} comments · Open discussion →</button></div></article>`}
+function wireCards(){view.querySelectorAll('[data-open-post]').forEach(b=>b.onclick=()=>location.hash='post/'+b.dataset.openPost);view.querySelectorAll('[data-like]').forEach(b=>b.onclick=()=>{const p=posts.find(x=>x.id===b.dataset.like);p.likes=(p.likes||0)+1;savePosts();render()});view.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{const id=b.dataset.save;saved=saved.includes(id)?saved.filter(x=>x!==id):[...saved,id];write(SAVED_KEY,saved);render()})}
+const challenges=[
+ {title:'Spot the phishing clues',desc:'A message says your account will close in 10 minutes unless you sign in through a shortened link. Name two warning signs.',answer:['urgency','shortened link','suspicious link','pressure','unknown sender']},
+ {title:'Harden a test account',desc:'Name one practical way to make a demo account safer before sharing it with a team.',answer:['mfa','2fa','passkey','unique password','password manager']},
+ {title:'Read a security header',desc:'What does HTTPS help protect while data travels between a browser and a website?',answer:['encrypt','encryption','confidentiality','traffic']}
+];
+function challengeIndex(){return Math.floor(Date.now()/86400000)%challenges.length}
+function renderFeed(){
+ activeId=null;setNav('feed');breadcrumb.textContent='Community / Feed';
+ const sorted=[...posts].sort((a,b)=>b.createdAt-a.createdAt), ch=challenges[challengeIndex()], done=localStorage.getItem(DONE_KEY)===String(challengeIndex());
+ view.innerHTML=`<div class="page-heading"><div><div class="eyebrow">The community</div><h1>Community feed</h1><p>Security, technology, projects and useful conversations.</p></div><button class="primary-btn" id="feed-new">＋ New post</button></div>
+ <section class="challenge"><div><div class="eyebrow">TODAY'S MINI CHALLENGE</div><h2>${ch.title}</h2><p>${ch.desc}</p></div><button class="secondary-btn" id="challenge-open">${done?'Completed ✓':'Take challenge'}</button></section>
+ <div class="feed-tools"><span>${sorted.length} ${sorted.length===1?'post':'posts'}</span><div class="feed-filters"><input id="search-posts" class="search-input" placeholder="Search posts…" aria-label="Search posts"><select id="filter-category" class="filter-select"><option value="All">All topics</option><option>Discussion</option><option>Projects</option><option>Questions</option><option>Resources</option><option>Security</option></select></div></div>
+ <div class="post-list" id="post-list">${sorted.length?sorted.map(postCard).join(''):`<div class="empty-state"><div class="empty-icon">▤</div><h3>Nothing here yet</h3><p>Start a conversation, share a project or ask a question.</p><button class="primary-btn" id="empty-new">Create the first post</button></div>`}</div>`;
+ document.getElementById('feed-new').onclick=()=>location.hash='new';document.getElementById('empty-new')?.addEventListener('click',()=>location.hash='new');
+ document.getElementById('challenge-open').onclick=()=>location.hash='challenge';
+ const search=document.getElementById('search-posts'), filter=document.getElementById('filter-category');
+ function filterPosts(){const q=search.value.toLowerCase(),cat=filter.value;const found=sorted.filter(p=>(cat==='All'||p.category===cat)&&(`${p.title} ${p.body} ${p.author}`).toLowerCase().includes(q));document.getElementById('post-list').innerHTML=found.length?found.map(postCard).join(''):'<div class="empty-state"><h3>No matching posts</h3><p>Try another search or topic.</p></div>';wireCards()}
+ search.oninput=filterPosts;filter.onchange=filterPosts;wireCards();renderSidebar()
+}
+function renderNew(){
+ activeId=null;setNav('');breadcrumb.textContent='Community / New post';
+ view.innerHTML=`<div class="page-heading"><div><div class="eyebrow">Share something</div><h1>Create a post</h1><p>Questions, projects, write-ups and resources are welcome.</p></div></div>
+ <form class="form-panel" id="post-form"><div class="field"><label for="title">Title</label><input id="title" name="title" maxlength="100" placeholder="What are you sharing?" required></div>
+ <div class="field"><label for="category">Topic</label><select id="category" name="category"><option>Discussion</option><option>Projects</option><option>Questions</option><option>Resources</option><option>Security</option></select></div>
+ <div class="field"><label for="body">Post</label><textarea id="body" name="body" maxlength="5000" placeholder="Write your post…" required></textarea><span class="hint">Share legal, authorized security learning and protect other people's privacy.</span></div>
+ <div class="field"><label for="video">Video link <span class="hint">(optional YouTube link)</span></label><input id="video" name="video" type="url" placeholder="https://youtu.be/..."></div>
+ <div class="form-actions"><span class="form-note">Posting as ${esc(user.name)} · saved on this device</span><button class="primary-btn">Publish post</button></div></form>`;
+ document.getElementById('post-form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.currentTarget),video=String(f.get('video')||'').trim();if(video&&!safeVideo(video)){alert('Please use a valid YouTube link.');return}
+ const p={id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),author:user.name,title:String(f.get('title')).trim(),category:String(f.get('category')),body:String(f.get('body')).trim(),video:safeVideo(video),createdAt:Date.now(),comments:[],likes:0};posts.push(p);savePosts();location.hash='post/'+p.id}
+}
+function renderPost(id){
+ const p=posts.find(x=>x.id===id);if(!p){location.hash='feed';return}activeId=id;setNav('');breadcrumb.textContent='Community / Discussion';
+ view.innerHTML=`<div class="thread-top"><a class="back-link" href="#feed">← Back to feed</a></div><article class="thread-card"><div class="post-meta"><span class="avatar-small">${esc(initials(p.author))}</span><span class="post-author">${esc(p.author)}</span><span>·</span><span>${dateLabel(p.createdAt)}</span><span class="tag">${esc(p.category)}</span></div><h1>${esc(p.title)}</h1><p class="thread-body">${esc(p.body)}</p>${p.video?`<a class="video-link" href="${esc(p.video)}" target="_blank" rel="noopener noreferrer">▶ Watch shared video ↗</a>`:''}<div class="thread-actions"><button class="quiet-btn" id="thread-like">♡ ${p.likes||0} likes</button><button class="quiet-btn" id="thread-save">${saved.includes(id)?'◆ Saved':'◇ Save post'}</button></div></article>
+ <section class="comments-section"><h2>Discussion (${p.comments.length})</h2><form class="comment-form" id="comment-form"><input class="comment-input" name="text" maxlength="800" placeholder="Add to the conversation…" required><button class="primary-btn">Comment</button></form><div>${p.comments.length?p.comments.map(c=>`<div class="comment"><strong>${esc(c.author)}</strong><p>${esc(c.text)}</p></div>`).join(''):'<div class="no-comments">No comments yet. Start the conversation.</div>'}</div></section>`;
+ document.getElementById('thread-like').onclick=()=>{p.likes=(p.likes||0)+1;savePosts();renderPost(id)};
+ document.getElementById('thread-save').onclick=()=>{saved=saved.includes(id)?saved.filter(x=>x!==id):[...saved,id];write(SAVED_KEY,saved);renderPost(id)};
+ document.getElementById('comment-form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.currentTarget),text=String(f.get('text')).trim();if(!text)return;p.comments.push({author:user.name,text,createdAt:Date.now()});savePosts();renderPost(id)};
+ renderSidebar()
+}
+function renderSaved(){activeId=null;setNav('saved');breadcrumb.textContent='Community / Saved';const items=posts.filter(p=>saved.includes(p.id));view.innerHTML=`<div class="page-heading"><div><div class="eyebrow">Your collection</div><h1>Saved posts</h1><p>Keep useful discussions close by.</p></div></div><div class="post-list">${items.length?items.map(postCard).join(''):'<div class="empty-state"><h3>No saved posts yet</h3><p>Use the Save action on any post to keep it here.</p></div>'}</div>`;wireCards();renderSidebar()}
+function renderRules(){activeId=null;setNav('');breadcrumb.textContent='Community / House rules';const rules=['Be respectful. Disagree with ideas, not people.','Share only information and media you have permission to share.','Keep security testing legal: use your own systems, labs or get clear permission.','Never post passwords, private data or someone else’s personal information.'];view.innerHTML=`<div class="page-heading"><div><div class="eyebrow">A few basics</div><h1>House rules</h1><p>Simple standards for everyone here.</p></div></div><div class="rules-layout">${rules.map((r,i)=>`<section class="rules-card"><div class="rule-number">${i+1}</div><p>${r}</p></section>`).join('')}</div>`}
+function renderChallenge(){const ch=challenges[challengeIndex()],done=localStorage.getItem(DONE_KEY)===String(challengeIndex());activeId=null;setNav('');breadcrumb.textContent='Community / Daily challenge';view.innerHTML=`<div class="thread-top"><a class="back-link" href="#feed">← Back to feed</a></div><section class="settings-section challenge-page"><div class="eyebrow">TODAY'S MINI CHALLENGE</div><h1>${ch.title}</h1><p>${ch.desc}</p><form id="challenge-form" class="challenge-form"><label for="challenge-answer">Your answer</label><input id="challenge-answer" class="comment-input" required placeholder="Type your answer…"><button class="primary-btn">${done?'Completed':'Check answer'}</button><p id="challenge-feedback" class="hint">${done?'You completed today’s challenge. Come back tomorrow for another one.':'A small hint: think about safe, everyday security habits.'}</p></form></section>`;document.getElementById('challenge-form').onsubmit=e=>{e.preventDefault();const val=document.getElementById('challenge-answer').value.toLowerCase();const ok=ch.answer.some(a=>val.includes(a));const msg=document.getElementById('challenge-feedback');if(ok){localStorage.setItem(DONE_KEY,String(challengeIndex()));msg.textContent='Nice — that is a good answer. Challenge completed!';e.currentTarget.querySelector('button').textContent='Completed'}else msg.textContent='Not quite. Think about the clue and try again.'}}
+function renderSettings(){activeId=null;setNav('');breadcrumb.textContent='Community / Settings';view.innerHTML=`<div class="page-heading"><div><div class="eyebrow">Your preferences</div><h1>Settings</h1><p>Make Underground feel like yours.</p></div></div><section class="settings-section"><h2>Appearance</h2><p>Choose a theme. Your choice is saved on this device.</p><div class="theme-options"><button class="theme-option" data-theme-choice="dark" aria-pressed="${theme()==='dark'}"><strong>Dark mode</strong><small>Low-light look</small><div class="theme-preview dark"><span></span><span></span></div></button><button class="theme-option" data-theme-choice="light" aria-pressed="${theme()==='light'}"><strong>Light mode</strong><small>Bright look</small><div class="theme-preview light"><span></span><span></span></div></button></div></section><section class="settings-section profile-settings"><h2>Profile</h2><p>Your display name is used on posts and comments on this device.</p><form id="profile-form"><input class="comment-input" name="name" maxlength="32" value="${esc(user.name)}" required><button class="primary-btn">Save display name</button></form><p class="hint">This is a local preview profile, not a Google account.</p></section><section class="settings-section"><h2>Account sign-in</h2><p>Google sign-in needs a secure authentication provider and project keys. It is not connected yet, so this preview will not pretend that a Google login works.</p></section>`;
+ view.querySelectorAll('[data-theme-choice]').forEach(b=>b.onclick=()=>{applyTheme(b.dataset.themeChoice);renderSettings()});
+ document.getElementById('profile-form').onsubmit=e=>{e.preventDefault();user.name=new FormData(e.currentTarget).get('name').trim();write(USER_KEY,user);renderSettings();renderSidebar()};
+ renderSidebar()
+}
+function render(){const {page,id}=getPage();if(page==='new')renderNew();else if(page==='post'&&id)renderPost(id);else if(page==='saved')renderSaved();else if(page==='rules')renderRules();else if(page==='settings')renderSettings();else if(page==='challenge')renderChallenge();else renderFeed()}
+document.getElementById('sidebar-new').onclick=()=>location.hash='new';
+const menuButton=document.getElementById('account-menu-button'),menu=document.getElementById('account-menu');
+menuButton.onclick=()=>{menu.hidden=!menu.hidden;menuButton.setAttribute('aria-expanded',String(!menu.hidden))};
+document.getElementById('open-settings').onclick=()=>{menu.hidden=true;location.hash='settings'};
+document.getElementById('edit-profile').onclick=()=>{menu.hidden=true;location.hash='settings'};
+document.addEventListener('click',e=>{if(!menu.hidden&&!menu.contains(e.target)&&!menuButton.contains(e.target)){menu.hidden=true;menuButton.setAttribute('aria-expanded','false')}});
+window.addEventListener('hashchange',render);render();
